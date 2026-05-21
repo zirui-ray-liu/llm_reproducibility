@@ -18,7 +18,7 @@ python -m rl_torchtitan_vllm.driver \
   --train-micro-batch-size 8 \
   --eval-every-n-steps 10 \
   --num-eval-per-sample 4 \
-  --vllm-gpu-memory-utilization 0.6 \
+  --vllm-gpu-memory-utilization 0.9 \
   --rollout-gpus 0,1,2,3 \
   --train-gpus 0,1,2,3 \
   --grpo-beta 0.5 \

@@ -8,7 +8,7 @@ python -m rl_torchtitan_vllm.driver \
   --use-real-dataset \
   --max-model-len 40960 \
   --vllm-port 12346 \
-  --run-dir "outputs/rl_fsdp_tbik_beta0.5" \
+  --run-dir "outputs/rl_fsdp_baseline_beta0.5" \
   --max-new-tokens 512 \
   --num-train-samples 256 \
   --num-test-samples 64 \
@@ -18,7 +18,7 @@ python -m rl_torchtitan_vllm.driver \
   --train-micro-batch-size 8 \
   --eval-every-n-steps 10 \
   --num-eval-per-sample 4 \
-  --vllm-gpu-memory-utilization 0.6 \
+  --vllm-gpu-memory-utilization 0.9 \
   --rollout-gpus 0,1,2,3 \
   --train-gpus 0,1,2,3 \
   --grpo-beta 0.5 \
