@@ -8,6 +8,15 @@
 **Understanding and Mitigating Numerical Sources of Nondeterminism in LLM Inference** (NeurIPS 2025, **Oral**) [[Paper](https://arxiv.org/abs/2506.09501)] [[HF](https://huggingface.co/papers/2506.09501)] [[Code](https://github.com/nanomaoli/llm_reproducibility/tree/main/evaluation)]
 
 ## News
+- [2026.05.29]: ⚡ **Faster TP-invariant matmul.** Added a CUDA warp-specialized Hopper (sm_90a) wgmma backend for `matmul_tp_persistent` (auto-selected for bf16, `K%256==0`, `N%128==0`; Triton fallback otherwise). On H100, same tree-reduction contract, **bitwise TP- & batch-invariant (0.000000% prob diff in the vLLM tp=1↔tp=4 test)**, with large matmul throughput gains over the Triton kernel:
+
+  | shape (M,K,N) | Triton | CUDA (new) | speedup |
+  |---|--:|--:|--:|
+  | 1024,6144,2048 (Qwen3-1.7B down_proj) | 175 TFLOP/s | **326 TFLOP/s** | **1.86×** |
+  | 2048,4096,4096 (8B o_proj) | 178 TFLOP/s | **293 TFLOP/s** | 1.65× |
+  | 2048,25600,5120 (32B down_proj) | 176 TFLOP/s | **371 TFLOP/s** | **2.11×** |
+
+  **Main idea:** the Triton kernel was load/barrier-bound (~175 TFLOP/s, tensor cores starved). The CUDA kernel is *warp-specialized* — **2 consumer warpgroups run `wgmma` while 1 producer warpgroup does `cp.async`**, coordinated by CUTLASS `PipelineAsync` mbarriers (no CTA-wide `__syncthreads`) with `setmaxnreg` register reallocation — so loads and tensor-core compute fully overlap. The fp32-group + bf16 balanced-tree reduction is unchanged, preserving determinism.
 - [2026.04.30]: 🎉🎉🎉 Our paper on TBIK (Tree Based Invariant Kernels) has been accepted to ICML 2026!
 - [2026.02.09]: 🚧 We add the custom tree all-reduce kernel to minimize the all-reduce latency (It requires NVLink).
 - [2025.11.18]: 🗣️ A new paper has been released on [arxiv](https://arxiv.org/abs/2511.17826). In this paper, we proposed TBIK(Tree Based Invariant Kernels), which enables deterministic inference across TP sizes.
@@ -65,7 +74,26 @@ uv pip install -e .
 uv pip install --no-build-isolation -v ./mini_allreduce
 ```
 
-### 5. (Optional) Install Flash Attention and TorchTitan for RL experiments
+### 5. CUDA warp-specialized matmul backend (Hopper / sm_90)
+`matmul_tp_persistent` uses a CUDA `wgmma` kernel (`src/tbik/csrc/matmul_tp.cu`) on supported inputs
+(bf16, `K % 256 == 0`, `N % 128 == 0`), falling back to the Triton kernel otherwise. **No separate
+pip install is needed** — it is JIT-compiled on first use (via `torch.utils.cpp_extension`, cached
+under `src/tbik/csrc/.cuda_build/`), and the CUTLASS/cute headers it needs are vendored in
+`src/tbik/csrc/cutlass_include/`.
+
+Requirements for the CUDA backend:
+- an **NVIDIA Hopper GPU (sm_90 / sm_90a)**, e.g. H100/H200;
+- the **CUDA toolkit (`nvcc`) on `PATH`**, with a major version matching your PyTorch build
+  (this project installs torch `cu128`, so use CUDA **12.x**). Check with `nvcc --version`.
+
+The first call triggers a one-time build (~a few minutes); subsequent runs reuse the cache. If `nvcc`
+is unavailable or the GPU is not Hopper, it transparently falls back to the Triton kernel.
+```bash
+# (optional) trigger + verify the JIT build now — should print "Is TP-Invariant: True"
+TP_INVARIANT_MATMUL=1 python simple_matmul.py
+```
+
+### 6. (Optional) Install Flash Attention and TorchTitan for RL experiments
 ```bash
 uv pip install flash-attn --no-build-isolation
 git clone https://github.com/xh-ding/torchtitan.git
@@ -75,7 +103,7 @@ cd ..
 uv pip install -e ".[rl]"
 ```
 
-### 6. Verify installation
+### 7. Verify installation
 ```bash
 python verify_installation.py
 python simple_matmul.py

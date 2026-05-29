@@ -24,7 +24,9 @@ outputs/
 .venv/
 venv/
 .uv/
+.venv_infer
 .cache/uv/
 
 *.md
 !README.md
+.cuda_build
